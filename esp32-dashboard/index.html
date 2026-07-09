@@ -1,0 +1,514 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ESP32 Field Monitor</title>
+  <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --green:      #39ff14;
+      --green-dim:  #1a7a08;
+      --amber:      #ffb300;
+      --red:        #ff2222;
+      --bg:         #050a05;
+      --panel:      #0a120a;
+      --border:     #1e3a1e;
+      --text:       #c8e6c8;
+      --text-dim:   #4a7a4a;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Share Tech Mono', monospace;
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    body::before {
+      content: '';
+      position: fixed; inset: 0;
+      background: repeating-linear-gradient(
+        to bottom,
+        transparent 0px,
+        transparent 3px,
+        rgba(0,0,0,.15) 3px,
+        rgba(0,0,0,.15) 4px
+      );
+      pointer-events: none;
+      z-index: 999;
+    }
+
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 32px;
+      border-bottom: 1px solid var(--border);
+      background: var(--panel);
+    }
+
+    .logo {
+      font-family: 'Orbitron', monospace;
+      font-size: 1.1rem;
+      font-weight: 900;
+      color: var(--green);
+      letter-spacing: .2em;
+      text-transform: uppercase;
+    }
+
+    .logo span { color: var(--text-dim); font-weight: 400; }
+
+    #conn-status {
+      font-size: .75rem;
+      letter-spacing: .15em;
+      padding: 4px 12px;
+      border-radius: 3px;
+      border: 1px solid;
+    }
+    #conn-status.online  { color: var(--green); border-color: var(--green-dim); }
+    #conn-status.offline { color: var(--red);   border-color: var(--red); animation: blink 1s step-end infinite; }
+
+    main {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      grid-template-rows: auto auto;
+      gap: 16px;
+      padding: 24px 32px;
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 20px 24px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .panel::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 2px;
+      background: var(--green-dim);
+    }
+
+    .panel-label {
+      font-size: .65rem;
+      letter-spacing: .25em;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      margin-bottom: 8px;
+    }
+
+    .panel-value {
+      font-family: 'Orbitron', monospace;
+      font-size: 2.4rem;
+      font-weight: 700;
+      color: var(--green);
+      line-height: 1;
+    }
+
+    .panel-unit {
+      font-size: .9rem;
+      color: var(--text-dim);
+      margin-top: 4px;
+    }
+
+    .panel-distance {
+      grid-column: span 2;
+    }
+
+    .panel-distance .panel-value {
+      font-size: 3.5rem;
+    }
+
+    #zone-badge {
+      display: inline-block;
+      margin-top: 12px;
+      padding: 6px 18px;
+      border-radius: 3px;
+      font-family: 'Orbitron', monospace;
+      font-size: .85rem;
+      font-weight: 700;
+      letter-spacing: .2em;
+      border: 1px solid;
+      transition: all .3s;
+    }
+
+    #zone-badge.SAFE         { color: var(--green); border-color: var(--green);  background: rgba(57,255,20,.07); }
+    #zone-badge.CAUTION      { color: var(--amber); border-color: var(--amber);  background: rgba(255,179,0,.07); animation: pulse-amber 1.5s ease-in-out infinite; }
+    #zone-badge.DANGER       { color: var(--red);   border-color: var(--red);    background: rgba(255,34,34,.1);  animation: pulse-red 0.7s ease-in-out infinite; }
+    #zone-badge.OUT_OF_RANGE { color: var(--text-dim); border-color: var(--border); background: transparent; }
+
+    .panel-radar {
+      grid-row: span 2;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    #radarCanvas {
+      width: 100%;
+      max-width: 260px;
+      height: 260px;
+      margin-top: 8px;
+    }
+
+    .panel-sos {
+      grid-column: span 2;
+    }
+
+    #sos-display {
+      text-align: center;
+      padding: 12px 0;
+      font-family: 'Orbitron', monospace;
+      font-size: 1.6rem;
+      font-weight: 900;
+      letter-spacing: .3em;
+      color: var(--text-dim);
+      border: 1px solid var(--border);
+      border-radius: 3px;
+      transition: all .2s;
+    }
+
+    #sos-display.active {
+      color: var(--red) !important;
+      border-color: var(--red) !important;
+      background: rgba(255,34,34,.2) !important;
+      animation: pulse-red .5s step-end infinite;
+      text-shadow: 0 0 20px var(--red);
+    }
+
+    /* —— PIR Motion panel —— */
+    #pir-display {
+      font-family: 'Orbitron', monospace;
+      font-size: 1.8rem;
+      font-weight: 700;
+      color: var(--green);
+      line-height: 1;
+      transition: all .3s;
+    }
+
+    #pir-display.motion {
+      color: var(--amber);
+      animation: pulse-amber 0.8s ease-in-out infinite;
+    }
+
+    #pir-badge {
+      display: inline-block;
+      margin-top: 10px;
+      padding: 4px 14px;
+      border-radius: 3px;
+      font-size: .75rem;
+      letter-spacing: .15em;
+      border: 1px solid;
+      transition: all .3s;
+    }
+
+    #pir-badge.clear  { color: var(--green); border-color: var(--green-dim); background: rgba(57,255,20,.06); }
+    #pir-badge.motion { color: var(--amber); border-color: var(--amber);     background: rgba(255,179,0,.08); }
+
+    .panel-log {
+      grid-column: span 3;
+    }
+
+    #log-list {
+      list-style: none;
+      max-height: 140px;
+      overflow-y: auto;
+      font-size: .78rem;
+      color: var(--text-dim);
+    }
+
+    #log-list li {
+      padding: 3px 0;
+      border-bottom: 1px solid rgba(30,58,30,.4);
+    }
+
+    #log-list li .ts  { color: var(--green-dim); margin-right: 8px; }
+    #log-list li .msg { color: var(--text); }
+    #log-list li.warn .msg { color: var(--amber); }
+    #log-list li.danger .msg { color: var(--red); }
+
+    #last-update {
+      font-size: .65rem;
+      color: var(--text-dim);
+      letter-spacing: .1em;
+      margin-top: 6px;
+    }
+
+    @keyframes blink       { 50% { opacity: 0; } }
+    @keyframes pulse-amber { 0%,100% { opacity: 1; } 50% { opacity: .55; } }
+    @keyframes pulse-red   { 0%,100% { opacity: 1; } 50% { opacity: .4;  } }
+
+    #log-list::-webkit-scrollbar { width: 4px; }
+    #log-list::-webkit-scrollbar-track { background: var(--bg); }
+    #log-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="logo">ESP32 <span>//</span> FIELD MONITOR</div>
+  <div id="conn-status" class="offline">● OFFLINE</div>
+</header>
+
+<main>
+
+  <div class="panel">
+    <div class="panel-label">▸ Temperature</div>
+    <div class="panel-value" id="temp-val">--.-</div>
+    <div class="panel-unit">degrees Celsius</div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-label">▸ Humidity</div>
+    <div class="panel-value" id="hum-val">--.-</div>
+    <div class="panel-unit">percent RH</div>
+  </div>
+
+  <div class="panel panel-radar" style="grid-row: span 2;">
+    <div class="panel-label">▸ Proximity Radar</div>
+    <canvas id="radarCanvas" width="260" height="260"></canvas>
+  </div>
+
+  <div class="panel panel-distance">
+    <div class="panel-label">▸ Ultrasonic Distance</div>
+    <div class="panel-value" id="dist-val">---</div>
+    <div class="panel-unit">centimetres</div>
+    <div id="zone-badge" class="OUT_OF_RANGE">OUT OF RANGE</div>
+    <div id="last-update">Last update: —</div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-label">▸ Smoke / Gas (MQ2)</div>
+    <div class="panel-value" id="gas-val">----</div>
+    <div class="panel-unit">raw ADC value</div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-label">▸ Motion (PIR)</div>
+    <div id="pir-display">CLEAR</div>
+    <div id="pir-badge" class="clear">No Motion</div>
+  </div>
+
+  <div class="panel panel-sos">
+    <div class="panel-label">▸ Emergency Status</div>
+    <div id="sos-display">STANDBY</div>
+  </div>
+
+  <div class="panel panel-log">
+    <div class="panel-label">▸ Event Log</div>
+    <ul id="log-list"></ul>
+  </div>
+
+</main>
+
+<script>
+  const canvas = document.getElementById('radarCanvas');
+  const ctx    = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+  const CX = W / 2, CY = H / 2;
+  const R1 = 34, R2 = 68, R3 = 100;
+
+  let radarAngle = 0;
+
+  function drawRadar(distCm) {
+    ctx.clearRect(0, 0, W, H);
+    ctx.fillStyle = '#050a05';
+    ctx.fillRect(0, 0, W, H);
+
+    [R1, R2, R3].forEach((r, i) => {
+      ctx.beginPath();
+      ctx.arc(CX, CY, r, 0, Math.PI * 2);
+      ctx.strokeStyle = i === 0 ? '#1e3a1e' : '#163016';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    });
+
+    ctx.fillStyle = '#2a5a2a';
+    ctx.font = '9px Share Tech Mono';
+    ctx.fillText('50cm',  CX + 2, CY - R1 - 2);
+    ctx.fillText('150cm', CX + 2, CY - R2 - 2);
+    ctx.fillText('300cm', CX + 2, CY - R3 - 2);
+
+    ctx.strokeStyle = '#163016';
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(CX, CY - R3); ctx.lineTo(CX, CY + R3); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(CX - R3, CY); ctx.lineTo(CX + R3, CY); ctx.stroke();
+
+    ctx.strokeStyle = '#0d200d';
+    ctx.beginPath(); ctx.moveTo(CX - R3*.7, CY - R3*.7); ctx.lineTo(CX + R3*.7, CY + R3*.7); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(CX + R3*.7, CY - R3*.7); ctx.lineTo(CX - R3*.7, CY + R3*.7); ctx.stroke();
+
+    radarAngle = (radarAngle + 2) % 360;
+    const sweep = (radarAngle - 90) * Math.PI / 180;
+    const grad = ctx.createLinearGradient(CX, CY,
+      CX + Math.cos(sweep) * R3,
+      CY + Math.sin(sweep) * R3
+    );
+    grad.addColorStop(0,   'rgba(57,255,20,0)');
+    grad.addColorStop(0.6, 'rgba(57,255,20,0.08)');
+    grad.addColorStop(1,   'rgba(57,255,20,0.35)');
+    ctx.beginPath();
+    ctx.moveTo(CX, CY);
+    ctx.arc(CX, CY, R3, sweep - 0.6, sweep);
+    ctx.closePath();
+    ctx.fillStyle = grad;
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.arc(CX, CY, 5, 0, Math.PI * 2);
+    ctx.fillStyle = '#39ff14';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(57,255,20,.4)';
+    ctx.lineWidth = 6;
+    ctx.stroke();
+
+    if (distCm !== null && distCm < 400) {
+      let dotR;
+      if      (distCm < 50)  dotR = R1 * 0.6;
+      else if (distCm < 150) dotR = (R1 + R2) / 2;
+      else                   dotR = (R2 + R3) / 2;
+
+      ctx.beginPath();
+      ctx.arc(CX, CY - dotR, 8, 0, Math.PI * 2);
+      ctx.fillStyle = distCm < 50 ? 'rgba(255,34,34,.2)' : 'rgba(255,179,0,.2)';
+      ctx.fill();
+
+      ctx.beginPath();
+      ctx.arc(CX, CY - dotR, 4, 0, Math.PI * 2);
+      ctx.fillStyle = distCm < 50 ? '#ff2222' : '#ffb300';
+      ctx.fill();
+    }
+  }
+
+  let lastDist   = null;
+  let lastZone   = null;
+  let lastSos    = false;
+  let lastMotion = false;
+
+  function fmt(val, dec = 1) {
+    return val !== null ? val.toFixed(dec) : '--';
+  }
+
+  function addLog(msg, cls = '') {
+    const ul = document.getElementById('log-list');
+    const li = document.createElement('li');
+    if (cls) li.classList.add(cls);
+    const ts = new Date().toLocaleTimeString();
+    li.innerHTML = `<span class="ts">[${ts}]</span><span class="msg">${msg}</span>`;
+    ul.prepend(li);
+    while (ul.children.length > 50) ul.removeChild(ul.lastChild);
+  }
+
+  async function fetchData() {
+    try {
+      const res  = await fetch('/data');
+      const data = await res.json();
+
+      const cs = document.getElementById('conn-status');
+      cs.textContent = '● ONLINE';
+      cs.className = 'online';
+
+      document.getElementById('temp-val').textContent = fmt(data.temperature);
+      document.getElementById('hum-val').textContent  = fmt(data.humidity);
+
+      const gv = document.getElementById('gas-val');
+      gv.textContent = data.gas !== null && data.gas !== undefined ? Math.round(data.gas) : '----';
+
+      const dv = document.getElementById('dist-val');
+      if (data.distance !== null && data.distance < 400) {
+        dv.textContent = data.distance.toFixed(1);
+      } else {
+        dv.textContent = '---';
+      }
+
+      const zb = document.getElementById('zone-badge');
+      const zone = data.zone || 'OUT_OF_RANGE';
+      zb.textContent = zone.replace('_', ' ');
+      zb.className = zone;
+
+      if (zone !== lastZone) {
+        const cls = zone === 'DANGER' ? 'danger' : zone === 'CAUTION' ? 'warn' : '';
+        addLog(`Zone changed → ${zone}`, cls);
+        lastZone = zone;
+      }
+
+      // —— PIR Motion ——
+      const pirDisplay = document.getElementById('pir-display');
+      const pirBadge   = document.getElementById('pir-badge');
+
+      if (data.motion) {
+        pirDisplay.textContent = 'MOTION!';
+        pirDisplay.classList.add('motion');
+        pirBadge.textContent = 'Motion Detected';
+        pirBadge.className = 'motion';
+        if (!lastMotion) addLog('⚠ Motion detected by PIR', 'warn');
+      } else {
+        pirDisplay.textContent = 'CLEAR';
+        pirDisplay.classList.remove('motion');
+        pirBadge.textContent = 'No Motion';
+        pirBadge.className = 'clear';
+        if (lastMotion) addLog('PIR motion cleared');
+      }
+      lastMotion = data.motion;
+
+      // —— EMERGENCY STATUS DISPLAY OVERRIDE FIX ——
+      const sosd = document.getElementById('sos-display');
+      
+      if (data.sos || zone === 'DANGER') {
+        sosd.textContent = '!! SOS !! EMERGENCY !!';
+        sosd.classList.add('active');
+        
+        sosd.style.backgroundColor = 'rgba(255, 34, 34, 0.2)';
+        sosd.style.color = '#ff2222';
+        sosd.style.borderColor = '#ff2222';
+        
+        if (!lastSos) {
+          addLog('🚨 EMERGENCY STATUS ACTIVATED', 'danger');
+        }
+        lastSos = true;
+      } else {
+        sosd.textContent = 'STANDBY';
+        sosd.classList.remove('active');
+        
+        sosd.style.backgroundColor = 'transparent';
+        sosd.style.color = 'var(--text-dim)';
+        sosd.style.borderColor = 'var(--border)';
+        
+        if (lastSos) {
+          addLog('SOS alarm state cleared');
+        }
+        lastSos = false;
+      }
+
+      if (data.lastUpdate) {
+        const d = new Date(data.lastUpdate);
+        document.getElementById('last-update').textContent =
+          'Last update: ' + d.toLocaleTimeString();
+      }
+
+      lastDist = data.distance;
+
+    } catch (e) {
+      const cs = document.getElementById('conn-status');
+      cs.textContent = '● OFFLINE';
+      cs.className = 'offline';
+    }
+  }
+
+  fetchData();
+  setInterval(fetchData, 800);
+  setInterval(() => drawRadar(lastDist), 33);
+</script>
+
+</body>
+</html>

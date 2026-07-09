@@ -1,0 +1,17 @@
+node_modules/
+esp32-dashboard/node_modules/
+
+# Local/editor files
+.DS_Store
+Thumbs.db
+*.tmp
+*.temp
+~$*
+
+# Generated extraction/debug files
+*_extracted.txt
+*.docx.txt
+
+# Logs
+*.log
+npm-debug.log*
