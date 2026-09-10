@@ -7,11 +7,11 @@
 U8G2_SH1106_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, U8X8_PIN_NONE);
 
 // ── WiFi credentials ──
-const char* WIFI_SSID = "hello";
-const char* WIFI_PASS = "12345678";
+const char* WIFI_SSID = "<YOUR_WIFI_SSID>";
+const char* WIFI_PASS = "<YOUR_WIFI_PASSWORD>";
 
-// ── Server endpoint (update this IP to your PC's local IP) ──
-String serverURL = "http://10.124.31.200:3000/api/sensor";
+// ── Server URL ──
+String serverURL = "http://<YOUR_PC_IP>:3000/api/sensor";
 
 // ── Pin definitions ──
 #define SOS_BUTTON  27
